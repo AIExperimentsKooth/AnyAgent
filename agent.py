@@ -91,6 +91,16 @@ class Agent:
             try:
                 response = self.llm.chat(messages)
             except LLMError as e:
+                err_msg = str(e)
+                if "timed out" in err_msg or "Connection refused" in err_msg:
+                    return (
+                        f"[fatal] Cannot reach the LLM backend at {self.llm.base_url}.\n"
+                        f"  Make sure the llama.cpp server is running:\n"
+                        f"    curl http://localhost:8080/v1/chat/completions -d '{{\"model\":\"test\",\"messages\":[{{\"role\":\"user\",\"content\":\"hi\"}}]}}'\n"
+                        f"  Start it with: ./build-llama.sh\n"
+                        f"  Or check the log: tail -50 /tmp/anyagent-llama-8080.log\n"
+                        f"  Or use a different URL: --url http://other-host:8080"
+                    )
                 return f"[fatal] LLM call failed: {e}"
             except KeyboardInterrupt:
                 return "[interrupted]"
@@ -204,17 +214,36 @@ def main():
 
     if args.check_api:
         agent = Agent(model=args.model, base_url=args.url)
+        import urllib.request, urllib.error
+        # First check basic TCP connectivity
+        print(f"Checking TCP connectivity to {args.url}...", file=sys.stderr)
+        tcp_ok = False
         try:
-            resp = agent.llm.chat(
-                [{"role": "user", "content": "Say exactly: API OK"}],
-                max_tokens=16,
-            )
-            print(f"API reachable at {args.url}")
-            print(f"Model: {args.model}")
-            print(f"Response: {resp}")
-        except LLMError as e:
-            print(f"API ERROR: {e}", file=sys.stderr)
+            url_parts = args.url.replace("http://", "").replace("https://", "").split(":")
+            host = url_parts[0]
+            port = int(url_parts[1].split("/")[0]) if len(url_parts) > 1 else 80
+            import socket
+            s = socket.create_connection((host, port), timeout=5)
+            s.close()
+            tcp_ok = True
+            print(f"  TCP: OK (port {port} open)", file=sys.stderr)
+        except Exception as e:
+            print(f"  TCP: FAILED — {e}", file=sys.stderr)
+            print(f"  Is the server running? Try: ./build-llama.sh", file=sys.stderr)
             sys.exit(1)
+
+        if tcp_ok:
+            try:
+                resp = agent.llm.chat(
+                    [{"role": "user", "content": "Say exactly: API OK"}],
+                    max_tokens=16,
+                )
+                print(f"  API: OK", file=sys.stderr)
+                print(f"  Model: {args.model}")
+                print(f"  Response: {resp}")
+            except LLMError as e:
+                print(f"  API call failed: {e}", file=sys.stderr)
+                sys.exit(1)
         return
 
     agent = Agent(model=args.model, base_url=args.url, max_iterations=args.max_iterations)

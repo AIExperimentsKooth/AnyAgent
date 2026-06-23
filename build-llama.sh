@@ -286,7 +286,6 @@ else
         --port "$PORT" \
         --ctx-size 2048 \
         --n-gpu-layers 0 \
-        --mlock \
         > "$LOGFILE" 2>&1 &
 
     SERVER_PID=$!
