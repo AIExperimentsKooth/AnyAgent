@@ -63,6 +63,50 @@ Rules:
 # ─── Start server helper ──────────────────────────────────────────────────────
 
 
+def _probe_port(host: str, port: int) -> str | None:
+    """Try to figure out what's listening on a port.
+
+    Returns a description string, or None if the port is unreachable.
+    """
+    import http.client
+    import socket
+
+    # TCP check first
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(3)
+    try:
+        s.connect((host, port))
+        s.close()
+    except (OSError, socket.error):
+        return None
+
+    # Try a raw HTTP GET to see what responds
+    for path in ["/health", "/", "/v1/chat/completions"]:
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request("GET", path)
+            resp = conn.getresponse()
+            body = resp.read(500).decode("utf-8", errors="replace")
+            conn.close()
+            return f"HTTP {resp.status} on {path} — {body[:200].strip()}"
+        except Exception:
+            pass
+
+    # Port is open but doesn't speak HTTP — check process name
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["ss", "-tlpn", f"sport = :{port}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.stdout.strip():
+            return f"Port open (non-HTTP?): {r.stdout.strip()[:200]}"
+    except Exception:
+        pass
+
+    return f"Port {port} is open but not responding to HTTP requests"
+
+
 def _ensure_server(url: str) -> bool | None:
     """Check if server is running; if not, try to start it automatically.
 
@@ -88,18 +132,50 @@ def _ensure_server(url: str) -> bool | None:
         except ValueError:
             pass
 
-    # Quick TCP check — is the server already running?
+    # Probe the port — is the server actually responding?
+    import http.client
     import socket
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(2)
-    try:
-        s.connect((host, port))
-        s.close()
-        return True  # already running
-    except (OSError, socket.error):
-        pass
-    finally:
-        s.close()
+
+    probe = _probe_port(host, port)
+    if probe is not None:
+        # Port is open.  But is it the right server?
+        # Try a health/chat endpoint
+        for path in ["/health", "/v1/chat/completions"]:
+            try:
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                if path == "/v1/chat/completions":
+                    conn.request("POST", path, '{"model":"ping","messages":[{"role":"user","content":"hi"}]}',
+                                 {"Content-Type": "application/json"})
+                else:
+                    conn.request("GET", path)
+                resp = conn.getresponse()
+                status = resp.status
+                body = resp.read(200).decode("utf-8", errors="replace")
+                conn.close()
+                if status < 500:
+                    print(f"    Server OK ({path} → {status})", file=sys.stderr)
+                    return True
+                else:
+                    print(f"    Server responded {status} on {path}: {body}", file=sys.stderr)
+                    # Server is there but unhappy — still return True
+                    # so the caller can proceed and get a proper LLMError
+                    return True
+            except Exception:
+                continue
+
+        # Port is open but nothing we tried matched
+        print(f"    Port {port} is open but not responding on /health or /v1/chat/completions", file=sys.stderr)
+        # Try to identify the process
+        try:
+            r = subprocess.run(
+                ["ss", "-tlpn", f"sport = :{port}"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.stdout.strip():
+                print(f"    Process listening: {r.stdout.strip()[:300]}", file=sys.stderr)
+        except Exception:
+            pass
+        return True  # let agent try anyway, it will get a clear LLMError
 
     # Server isn't running — look for the compiled binary
     home = os.path.expanduser("~")
@@ -209,16 +285,24 @@ class Agent:
                 response = self.llm.chat(messages)
             except LLMError as e:
                 err_msg = str(e)
+                # Try to probe the port for diagnostics
+                try:
+                    diag = _probe_port("localhost", 8080)
+                    if diag:
+                        err_msg += f"\n  Port 8080 diagnostic: {diag}"
+                except Exception:
+                    pass
                 if "timed out" in err_msg or "Connection refused" in err_msg:
                     return (
                         f"[fatal] Cannot reach the LLM backend at {self.llm.base_url}.\n"
+                        f"  {err_msg}\n"
                         f"  Make sure the llama.cpp server is running:\n"
                         f"    curl http://localhost:8080/v1/chat/completions -d '{{\"model\":\"test\",\"messages\":[{{\"role\":\"user\",\"content\":\"hi\"}}]}}'\n"
                         f"  Start it with: ./build-llama.sh\n"
                         f"  Or check the log: tail -50 /tmp/anyagent-llama-8080.log\n"
                         f"  Or use a different URL: --url http://other-host:8080"
                     )
-                return f"[fatal] LLM call failed: {e}"
+                return f"[fatal] LLM call failed: {err_msg}"
             except KeyboardInterrupt:
                 return "[interrupted]"
 
