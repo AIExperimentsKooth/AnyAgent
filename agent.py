@@ -11,8 +11,8 @@ Usage:
     python agent.py --interactive   # REPL-like single-turn mode
 
 Environment:
-    MINIMA_MODEL   — model name (default: qwen2.5-0.5b-q4, env: MINIMA_MODEL)
-    MINIMA_URL     — llama.cpp or OpenAI-compatible API (default: http://localhost:8080, env: MINIMA_URL)
+    ANYAGENT_MODEL — model name (default: qwen2.5-0.5b-q4, env: ANYAGENT_MODEL)
+    ANYAGENT_URL   — llama.cpp or OpenAI-compatible API (default: http://localhost:8080, env: ANYAGENT_URL)
 """
 
 import argparse
@@ -422,13 +422,13 @@ def main():
     parser.add_argument("task", nargs="?", help="Task description")
     parser.add_argument(
         "--model",
-        default=os.environ.get("MINIMA_MODEL", "qwen2.5-0.5b-q4"),
-        help="LLM model name (default: qwen2.5-0.5b-q4, env: MINIMA_MODEL)",
+        default=os.environ.get("ANYAGENT_MODEL", "qwen2.5-0.5b-q4"),
+        help="LLM model name (default: qwen2.5-0.5b-q4, env: ANYAGENT_MODEL)",
     )
     parser.add_argument(
         "--url",
-        default=os.environ.get("MINIMA_URL", "http://localhost:8080"),
-        help="API base URL (default: http://localhost:8080 — llama.cpp, env: MINIMA_URL)",
+        default=os.environ.get("ANYAGENT_URL", "http://localhost:8080"),
+        help="API base URL (default: http://localhost:8080 — llama.cpp, env: ANYAGENT_URL)",
     )
     parser.add_argument(
         "--max-iterations", type=int, default=50,

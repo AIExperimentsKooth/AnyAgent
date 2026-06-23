@@ -1,5 +1,4 @@
-<<<<<<< HEAD
-# minima — Minimal Python-Only Agentic System
+# AnyAgent — Minimal Python-Only Agentic System
 
 **Zero dependencies.** Pure Python 3 stdlib. Runs on i686 (32-bit) Debian
 and other CPU-constrained environments.
@@ -112,7 +111,7 @@ python agent.py --list-tools
 python agent.py --interactive
 ```
 
-Environment variables: `MINIMA_MODEL`, `MINIMA_URL`.
+Environment variables: `ANYAGENT_MODEL`, `ANYAGENT_URL`.
 
 ## Tools
 
@@ -143,7 +142,7 @@ TOOL write_file
 
 The target environment is **32-bit Debian** (i686). Many Python packages
 with C extensions fail to build on i686 or require complex cross-compilation
-toolchains. Minima uses only Python stdlib modules:
+toolchains. AnyAgent uses only Python stdlib modules:
 
 - `urllib.request` — HTTP client for LLM API
 - `subprocess` — shell commands
