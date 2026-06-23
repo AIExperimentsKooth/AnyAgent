@@ -60,6 +60,123 @@ Rules:
 """
 
 
+# ─── Start server helper ──────────────────────────────────────────────────────
+
+
+def _ensure_server(url: str) -> bool | None:
+    """Check if server is running; if not, try to start it automatically.
+
+    Returns True if server is running, False if binary not found,
+    None if it can't be started.  Prints status to stderr.
+    """
+    import os
+    import subprocess
+    import sys
+    import time
+    from pathlib import Path
+
+    # Parse host and port from URL
+    host = "localhost"
+    port = 8080
+    raw = url.replace("http://", "").replace("https://", "")
+    if ":" in raw:
+        parts = raw.rsplit(":", 1)
+        host = parts[0]
+        port_str = parts[1].split("/")[0]
+        try:
+            port = int(port_str)
+        except ValueError:
+            pass
+
+    # Quick TCP check — is the server already running?
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(2)
+    try:
+        s.connect((host, port))
+        s.close()
+        return True  # already running
+    except (OSError, socket.error):
+        pass
+    finally:
+        s.close()
+
+    # Server isn't running — look for the compiled binary
+    home = os.path.expanduser("~")
+    candidates = [
+        os.path.join(home, ".anyagent", "llama.cpp", "build", "bin", "llama-server"),
+        os.path.join(home, ".anyagent", "llama.cpp", "build", "bin", "server"),
+        os.path.join(home, "anyagent", "llama.cpp", "build", "bin", "llama-server"),
+    ]
+    binary = None
+    for c in candidates:
+        if os.path.isfile(c):
+            binary = c
+            break
+
+    if not binary:
+        print("[!] Server not running and no compiled binary found.", file=sys.stderr)
+        print(f"    Build it with: cd ~/anyagent && ./build-llama.sh", file=sys.stderr)
+        return False
+
+    # Find a model
+    models_dir = os.path.join(home, ".anyagent", "models")
+    model = None
+    if os.path.isdir(models_dir):
+        for f in sorted(os.listdir(models_dir)):
+            if f.endswith(".gguf"):
+                model = os.path.join(models_dir, f)
+                break
+
+    if not model:
+        print("[!] Server binary exists but no GGUF model found.", file=sys.stderr)
+        print(f"    Run: cd ~/anyagent && ./build-llama.sh", file=sys.stderr)
+        return False
+
+    # Launch the server
+    logfile = f"/tmp/anyagent-llama-{port}.log"
+    pidfile = f"/tmp/anyagent-llama-{port}.pid"
+    print(f"[+] Starting llama.cpp server on port {port}...", file=sys.stderr)
+    print(f"    Binary: {binary}", file=sys.stderr)
+    print(f"    Model:  {model}", file=sys.stderr)
+    print(f"    Log:    {logfile}", file=sys.stderr)
+
+    with open(logfile, "w") as lf:
+        proc = subprocess.Popen(
+            [binary, "-m", model, "--host", "0.0.0.0",
+             "--port", str(port), "--ctx-size", "2048", "--n-gpu-layers", "0"],
+            stdout=lf, stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+    with open(pidfile, "w") as pf:
+        pf.write(str(proc.pid))
+
+    # Wait for startup (up to 60s)
+    import http.client
+    for i in range(60):
+        time.sleep(1)
+        try:
+            conn = http.client.HTTPConnection("localhost", port, timeout=2)
+            conn.request("GET", "/health")
+            if conn.getresponse().status < 500:
+                print(f"    Server ready after {i+1}s (pid {proc.pid})", file=sys.stderr)
+                return True
+        except Exception:
+            pass
+        # Check if process died
+        if proc.poll() is not None:
+            with open(logfile) as lf:
+                tail = lf.read()[-500:]
+            print(f"    [x] Server exited (code {proc.returncode})", file=sys.stderr)
+            print(f"    Tail of log:\n{tail}", file=sys.stderr)
+            return None
+
+    print(f"    [i] Server process running but not yet responding.", file=sys.stderr)
+    print(f"    Check log: tail -50 {logfile}", file=sys.stderr)
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Conversation loop
 # ---------------------------------------------------------------------------
@@ -205,6 +322,10 @@ def main():
         "--check-api", action="store_true",
         help="Test LLM API connectivity and exit",
     )
+    parser.add_argument(
+        "--no-start-server", action="store_true",
+        help="Don't auto-start llama.cpp server (use if managing it yourself)",
+    )
 
     args = parser.parse_args()
 
@@ -245,6 +366,14 @@ def main():
                 print(f"  API call failed: {e}", file=sys.stderr)
                 sys.exit(1)
         return
+
+    # Auto-start server if needed (skip with --no-start-server or
+    # when pointing at a remote host)
+    if not args.no_start_server and ("localhost" in args.url or "127.0.0.1" in args.url):
+        status = _ensure_server(args.url)
+        if status is False:
+            print(file=sys.stderr)
+            sys.exit(1)
 
     agent = Agent(model=args.model, base_url=args.url, max_iterations=args.max_iterations)
 
