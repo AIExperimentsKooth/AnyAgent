@@ -234,7 +234,7 @@ def tool_start_llama(
     import urllib.request
     from pathlib import Path
 
-    LLAMA_SRC = os.path.expanduser("~/.minima/llama.cpp")
+    LLAMA_SRC = os.path.expanduser("~/.anyagent/llama.cpp")
     BUILD_DIR = os.path.join(LLAMA_SRC, "build")
     SERVER_BIN = os.path.join(BUILD_DIR, "bin", "server")
 
@@ -310,7 +310,7 @@ def tool_start_llama(
             return model_path
         # Search common locations
         search_dirs = [
-            os.path.expanduser("~/.minima/models/"),
+            os.path.expanduser("~/.anyagent/models/"),
             os.path.expanduser("~/models/"),
             "/tmp/models/",
             ".",
@@ -331,7 +331,7 @@ def tool_start_llama(
                 url = "https://" + url
             elif url.startswith("huggingface.co/"):
                 url = "https://" + url
-            model_dir = os.path.expanduser("~/.minima/models/")
+            model_dir = os.path.expanduser("~/.anyagent/models/")
             os.makedirs(model_dir, exist_ok=True)
             # Derive filename from URL
             fname = url.rstrip("/").rsplit("/", 1)[-1]
@@ -377,9 +377,9 @@ def tool_start_llama(
         return (
             "[error] No GGUF model found and no model_path provided.\n"
             "Download one with:\n"
-            "  wget -O ~/.minima/models/qwen2.5-0.5b-q4.gguf \\\n"
+            "  wget -O ~/.anyagent/models/qwen2.5-0.5b-q4.gguf \\\n"
             "    https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf\n"
-            "Then re-run: TOOL start_llama(model_path=\"~/.minima/models/qwen2.5-0.5b-q4.gguf\")"
+            Then re-run: TOOL start_llama(model_path="~/.anyagent/models/
         )
 
     local_model, _ = _ensure_model(model_file)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-minima — Minimal Python-only agentic system.
+AnyAgent — Minimal Python-only agentic system.
 
 A pure-stdlib tool-calling agent loop for i686 Debian and other
 constrained environments. No pip packages required.
@@ -31,7 +31,7 @@ from tool_parser import parse, FinishSignal, ToolCall
 # System prompt
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an autonomous coding agent called minima. You run on a 32-bit Debian system.
+SYSTEM_PROMPT = """You are an autonomous coding agent called AnyAgent. You run on a 32-bit Debian system.
 
 You have tools to interact with the environment. To call a tool, output exactly:
 
@@ -158,7 +158,7 @@ def _print_result_preview(result: str, file=sys.stderr) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="minima — minimal Python-only agentic system",
+        description="AnyAgent — minimal Python-only agentic system",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
@@ -220,7 +220,7 @@ def main():
     agent = Agent(model=args.model, base_url=args.url, max_iterations=args.max_iterations)
 
     if args.interactive:
-        print("minima interactive mode. Type your task (Ctrl+D to exit).",
+        print("AnyAgent interactive mode. Type your task (Ctrl+D to exit).",
               file=sys.stderr)
         try:
             for line in sys.stdin:

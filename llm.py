@@ -1,5 +1,5 @@
 """
-minima — Pure-stdlib LLM client for OpenAI-compatible chat APIs.
+AnyAgent — Pure-stdlib LLM client for OpenAI-compatible chat APIs.
 
 Works on i686 Debian with no compiled dependencies.
 Supports llama.cpp server, vLLM, and any API with /v1/chat/completions.
