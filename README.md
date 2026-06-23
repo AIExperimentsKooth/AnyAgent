@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # minima — Minimal Python-Only Agentic System
 
 **Zero dependencies.** Pure Python 3 stdlib. Runs on i686 (32-bit) Debian
@@ -126,3 +127,6 @@ toolchains. Minima uses only Python stdlib modules:
 The `start_llama` tool does require build tools (`cmake`, `g++`, `make`)
 to compile llama.cpp from source — but those are OS-level packages
 installed via `apt-get`, not pip dependencies.
+=======
+# AnyAgent
+>>>>>>> origin/main
