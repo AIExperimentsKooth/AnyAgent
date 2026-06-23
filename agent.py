@@ -107,6 +107,32 @@ def _probe_port(host: str, port: int) -> str | None:
     return f"Port {port} is open but not responding to HTTP requests"
 
 
+def _kill_port_process(port: int) -> None:
+    """Kill any process listening on a given port."""
+    import os
+    import signal
+    import subprocess
+    import sys
+    try:
+        r = subprocess.run(
+            ["ss", "-tlpn", f"sport = :{port}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        # ss output: "LISTEN 0 10 0.0.0.0:8080 0.0.0.0:* users:(("llama-server",pid=1234,fd=5))"
+        import re
+        for match in re.finditer(r"pid=(\d+)", r.stdout):
+            pid = int(match.group(1))
+            try:
+                os.kill(pid, signal.SIGTERM)
+                print(f"    Killed pid {pid}", file=sys.stderr)
+            except ProcessLookupError:
+                pass
+        import time
+        time.sleep(1)  # give it time to release the port
+    except Exception:
+        pass
+
+
 def _ensure_server(url: str) -> bool | None:
     """Check if server is running; if not, try to start it automatically.
 
@@ -138,44 +164,58 @@ def _ensure_server(url: str) -> bool | None:
 
     probe = _probe_port(host, port)
     if probe is not None:
-        # Port is open.  But is it the right server?
-        # Try a health/chat endpoint
-        for path in ["/health", "/v1/chat/completions"]:
-            try:
-                conn = http.client.HTTPConnection(host, port, timeout=5)
-                if path == "/v1/chat/completions":
-                    conn.request("POST", path, '{"model":"ping","messages":[{"role":"user","content":"hi"}]}',
-                                 {"Content-Type": "application/json"})
-                else:
-                    conn.request("GET", path)
-                resp = conn.getresponse()
-                status = resp.status
-                body = resp.read(200).decode("utf-8", errors="replace")
-                conn.close()
-                if status < 500:
-                    print(f"    Server OK ({path} → {status})", file=sys.stderr)
-                    return True
-                else:
-                    print(f"    Server responded {status} on {path}: {body}", file=sys.stderr)
-                    # Server is there but unhappy — still return True
-                    # so the caller can proceed and get a proper LLMError
-                    return True
-            except Exception:
-                continue
+        # Port is open.  Check health endpoint first.
+        health_ok = False
+        chat_ok = False
 
-        # Port is open but nothing we tried matched
-        print(f"    Port {port} is open but not responding on /health or /v1/chat/completions", file=sys.stderr)
-        # Try to identify the process
+        # Check /health
         try:
-            r = subprocess.run(
-                ["ss", "-tlpn", f"sport = :{port}"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if r.stdout.strip():
-                print(f"    Process listening: {r.stdout.strip()[:300]}", file=sys.stderr)
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request("GET", "/health")
+            resp = conn.getresponse()
+            if resp.status < 500:
+                health_ok = True
+            conn.close()
         except Exception:
             pass
-        return True  # let agent try anyway, it will get a clear LLMError
+
+        # If health works, try a quick inference probe
+        if health_ok:
+            try:
+                conn = http.client.HTTPConnection(host, port, timeout=10)
+                conn.request("POST", "/v1/chat/completions",
+                             '{"model":"ping","messages":[{"role":"user","content":"hi"}],"max_tokens":1}',
+                             {"Content-Type": "application/json"})
+                resp = conn.getresponse()
+                if resp.status < 500:
+                    chat_ok = True
+                conn.close()
+            except Exception:
+                pass
+
+        if health_ok and chat_ok:
+            print(f"    Server OK (health + chat both respond)", file=sys.stderr)
+            return True
+
+        if health_ok and not chat_ok:
+            # Server is running but inference is broken (bad model, OOM, etc.)
+            print(f"    [!] Server responds on /health but inference on /v1/chat/completions hangs", file=sys.stderr)
+            print(f"    This usually means the model failed to load, or the server was left in a bad state.", file=sys.stderr)
+            print(f"    Killing existing server and restarting...", file=sys.stderr)
+            # Kill whatever is on this port
+            _kill_port_process(port)
+            # Fall through to start logic below
+        else:
+            # Port is open but not our server
+            try:
+                r = subprocess.run(
+                    ["ss", "-tlpn", f"sport = :{port}"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if r.stdout.strip():
+                    print(f"    Process on port {port}: {r.stdout.strip()[:300]}", file=sys.stderr)
+            except Exception:
+                pass
 
     # Server isn't running — look for the compiled binary
     home = os.path.expanduser("~")
