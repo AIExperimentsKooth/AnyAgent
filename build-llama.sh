@@ -26,7 +26,10 @@ INSTALL_DIR="${HOME}/.anyagent"
 LLAMA_SRC="${INSTALL_DIR}/llama.cpp"
 MODELS_DIR="${INSTALL_DIR}/models"
 BUILD_DIR="${LLAMA_SRC}/build"
-SERVER_BIN="${BUILD_DIR}/bin/server"
+# Modern llama.cpp builds the server as 'llama-server'.
+# Older versions used 'server'.  We check both at runtime.
+SERVER_BIN="${BUILD_DIR}/bin/llama-server"
+SERVER_BIN_OLD="${BUILD_DIR}/bin/server"
 PORT="${PORT:-8080}"
 MODEL_URL=""
 MODEL_PATH=""
@@ -151,7 +154,8 @@ else
         -DLLAMA_VULKAN=OFF \
         -DLLAMA_OPENCL=OFF \
         -DCMAKE_BUILD_TYPE=Release \
-        -DLLAMA_NATIVE=OFF
+        -DLLAMA_NATIVE=OFF \
+        -DLLAMA_BUILD_SERVER=ON
 
     echo ""
     log "Building server (single-threaded, this is the slow part)..."
@@ -163,7 +167,7 @@ else
     # Show a heartbeat timestamp every 60s during silence.
     set +e
     (
-        make -j1 server 2>&1 &
+        make -j1 llama-server 2>&1 &
         MAKE_PID=$!
 
         # Heartbeat: print a timestamp every 60s so the user knows
@@ -196,11 +200,18 @@ else
     log "Build complete!"
 fi
 
-# Verify binary exists
+# Verify binary exists — check modern name, then old name
 if [[ ! -f "$SERVER_BIN" ]]; then
-    err "Server binary not found at ${SERVER_BIN}"
-    err "Build may have failed. Check output above."
-    exit 1
+    if [[ -f "$SERVER_BIN_OLD" ]]; then
+        log "Using older server binary at ${SERVER_BIN_OLD}"
+        SERVER_BIN="$SERVER_BIN_OLD"
+    else
+        err "Server binary not found."
+        err "  Tried: ${SERVER_BIN}"
+        err "  Tried: ${SERVER_BIN_OLD}"
+        err "Build may have failed. Scroll up for errors."
+        exit 1
+    fi
 fi
 
 # ─── Step 4: Download model ──────────────────────────────────────────────────

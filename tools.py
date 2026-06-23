@@ -236,7 +236,8 @@ def tool_start_llama(
 
     LLAMA_SRC = os.path.expanduser("~/.anyagent/llama.cpp")
     BUILD_DIR = os.path.join(LLAMA_SRC, "build")
-    SERVER_BIN = os.path.join(BUILD_DIR, "bin", "server")
+    SERVER_BIN = os.path.join(BUILD_DIR, "bin", "llama-server")
+    SERVER_BIN_OLD = os.path.join(BUILD_DIR, "bin", "server")
 
     def _log(msg: str) -> None:
         print(f"  [llama] {msg}", file=sys.stderr)
@@ -277,7 +278,7 @@ def tool_start_llama(
         return None
 
     def _build() -> str | None:
-        if os.path.exists(SERVER_BIN):
+        if os.path.exists(SERVER_BIN) or os.path.exists(SERVER_BIN_OLD):
             _log("Server binary already built, skipping build.")
             return None
 
@@ -379,7 +380,7 @@ def tool_start_llama(
             "Download one with:\n"
             "  wget -O ~/.anyagent/models/qwen2.5-0.5b-q4.gguf \\\n"
             "    https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf\n"
-            Then re-run: TOOL start_llama(model_path="~/.anyagent/models/
+            "Then re-run: TOOL start_llama(model_path=\"~/.anyagent/models/qwen2.5-0.5b-q4.gguf\")"
         )
 
     local_model, _ = _ensure_model(model_file)
@@ -390,6 +391,12 @@ def tool_start_llama(
     _log(f"Starting llama.cpp server on port {port} with model: {local_model}")
     logfile = f"/tmp/llama-server-{port}.log"
     pidfile = f"/tmp/llama-server-{port}.pid"
+
+    # Resolve server binary — prefer llama-server, fall back to server
+    if not os.path.exists(SERVER_BIN):
+        if os.path.exists(SERVER_BIN_OLD):
+            SERVER_BIN = SERVER_BIN_OLD
+            _log(f"Using older server binary: {SERVER_BIN}")
 
     # Check if already running
     try:
