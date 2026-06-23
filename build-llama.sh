@@ -157,13 +157,39 @@ else
     log "Building server (single-threaded, this is the slow part)..."
     echo ""
 
-    # Build only the server target, not everything
-    make -j1 server 2>&1 | while IFS= read -r line; do
-        # Progress dots so user knows it's alive
-        if [[ "$line" =~ \[[0-9]+%\] ]]; then
-            echo -ne "\r  ${line}"
-        fi
-    done
+    # Build only the server target, not everything.
+    # Run directly (no pipe) so all compiler warnings and errors
+    # are visible and the exit code is captured correctly.
+    # Show a heartbeat timestamp every 60s during silence.
+    set +e
+    (
+        make -j1 server 2>&1 &
+        MAKE_PID=$!
+
+        # Heartbeat: print a timestamp every 60s so the user knows
+        # the build is still alive during long single-file compiles
+        while kill -0 "$MAKE_PID" 2>/dev/null; do
+            sleep 60
+            kill -0 "$MAKE_PID" 2>/dev/null || break
+            echo "  [still building... $(date +%H:%M:%S)]"
+        done
+
+        wait "$MAKE_PID"
+        exit $?
+    )
+    MAKE_EXIT=$?
+    set -e
+
+    if [[ "$MAKE_EXIT" -ne 0 ]]; then
+        echo ""
+        err "Build failed (exit code $MAKE_EXIT)."
+        err "Scroll up to find the error — look for 'error:' or 'FAILED' in the output."
+        err "Common issues on i686 Debian:"
+        err "  - Out of memory (try adding swap: sudo fallocate -l 2G /swap && sudo mkswap /swap && sudo swapon /swap)"
+        err "  - Missing dependencies: sudo apt-get install build-essential"
+        err "  - Full log: ${BUILD_DIR}/CMakeFiles/CMakeOutput.log"
+        exit 1
+    fi
 
     echo ""
     echo ""
